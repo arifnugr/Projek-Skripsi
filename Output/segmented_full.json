@@ -1,0 +1,66 @@
+{
+  "image_path": "runs\\fastsam_near\\segmented.png",
+  "fastsam_objects": [
+    {
+      "id": 1,
+      "area": 11266,
+      "bbox": [
+        126,
+        0,
+        244,
+        112
+      ],
+      "h_position": "left",
+      "v_position": "far",
+      "score": 0.7221876382827759
+    },
+    {
+      "id": 2,
+      "area": 7045,
+      "bbox": [
+        242,
+        63,
+        329,
+        162
+      ],
+      "h_position": "left",
+      "v_position": "far",
+      "score": 0.7087901830673218
+    },
+    {
+      "id": 3,
+      "area": 7465,
+      "bbox": [
+        954,
+        0,
+        1024,
+        236
+      ],
+      "h_position": "right",
+      "v_position": "far",
+      "score": 0.6056016683578491
+    },
+    {
+      "id": 4,
+      "area": 18430,
+      "bbox": [
+        264,
+        361,
+        654,
+        437
+      ],
+      "h_position": "center",
+      "v_position": "medium",
+      "score": 0.5773410797119141
+    }
+  ],
+  "prompt_used": "You are helping a blind person navigate. Look at this image.\n\nI detected 4 objects at these locations:\nObject 1: far left (area: 11266 pixels)\nObject 2: far left (area: 7045 pixels)\nObject 3: far right (area: 7465 pixels)\nObject 4: medium center (area: 18430 pixels)\n\nFor object, tell me in plain English:\n- What is the object?\n- Where is it?\n\nDo NOT use numbers or technical terms. Speak naturally.\nStart: \"There is a...\" or \"I see a...\"\nDescribe the 4 objects now:",
+  "moondream_raw": "- There is a large pothole in the middle of the road that several people are riding motorcycles and mopeds around it.",
+  "tts_output": "- There is a large pothole in the middle of the road that several people are riding motorcycles and mopeds around it. Avoid or stop.",
+  "stats": {
+    "raw_length": 117,
+    "raw_words": 22,
+    "clean_length": 132,
+    "clean_words": 25
+  }
+}

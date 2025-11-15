@@ -1,0 +1,136 @@
+{
+  "segmented_image_path": "E:\\Skripsi\\Projek-Moondream\\runs\\fastsam_near\\segmented.png",
+  "bbox_image_path": "E:\\Skripsi\\Projek-Moondream\\runs\\fastsam_near\\bbox_near.png",
+  "objects": [
+    {
+      "id": 1,
+      "area": 10246,
+      "bbox": [
+        455,
+        238,
+        565,
+        360
+      ],
+      "h_position": "center",
+      "v_position": "medium",
+      "score": 0.895399808883667
+    },
+    {
+      "id": 2,
+      "area": 73983,
+      "bbox": [
+        0,
+        441,
+        335,
+        720
+      ],
+      "h_position": "left",
+      "v_position": "near",
+      "score": 0.8852425813674927
+    },
+    {
+      "id": 3,
+      "area": 165814,
+      "bbox": [
+        412,
+        124,
+        1094,
+        720
+      ],
+      "h_position": "center",
+      "v_position": "medium",
+      "score": 0.859817385673523
+    },
+    {
+      "id": 4,
+      "area": 89918,
+      "bbox": [
+        411,
+        342,
+        805,
+        720
+      ],
+      "h_position": "center",
+      "v_position": "near",
+      "score": 0.809121310710907
+    },
+    {
+      "id": 5,
+      "area": 15376,
+      "bbox": [
+        516,
+        124,
+        699,
+        246
+      ],
+      "h_position": "center",
+      "v_position": "far",
+      "score": 0.7903919219970703
+    },
+    {
+      "id": 6,
+      "area": 18607,
+      "bbox": [
+        1040,
+        598,
+        1280,
+        720
+      ],
+      "h_position": "right",
+      "v_position": "near",
+      "score": 0.7392896413803101
+    },
+    {
+      "id": 7,
+      "area": 21753,
+      "bbox": [
+        535,
+        187,
+        692,
+        429
+      ],
+      "h_position": "center",
+      "v_position": "medium",
+      "score": 0.6271001100540161
+    },
+    {
+      "id": 8,
+      "area": 12608,
+      "bbox": [
+        299,
+        0,
+        469,
+        122
+      ],
+      "h_position": "center",
+      "v_position": "far",
+      "score": 0.5884302258491516
+    },
+    {
+      "id": 9,
+      "area": 24846,
+      "bbox": [
+        455,
+        124,
+        700,
+        361
+      ],
+      "h_position": "center",
+      "v_position": "far",
+      "score": 0.54545658826828
+    },
+    {
+      "id": 10,
+      "area": 14833,
+      "bbox": [
+        257,
+        468,
+        436,
+        585
+      ],
+      "h_position": "left",
+      "v_position": "near",
+      "score": 0.48587551712989807
+    }
+  ]
+}
