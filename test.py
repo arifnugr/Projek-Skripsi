@@ -46,24 +46,25 @@ def build_segments_info(objects: list) -> str:
 
 
 def build_prompt(segments_info: str = "") -> str:
-    """Prompt sederhana yang melarang output teknis."""
+    """Prompt yang lebih detail dan mengarahkan output."""
     if not segments_info:
-        return "What do you see in this image? Describe the objects and their locations."
+        return "Describe what you see in this image in detail, including objects and their locations."
     
     num_objects = segments_info.count("Object")
     
-    prompt = f"""You are helping a blind person navigate. Look at this image.
+    prompt = f"""You are assisting a blind person. Describe this image carefully.
 
-I detected {num_objects} objects at these locations:
+Detected objects at these positions:
 {segments_info}
 
-For object, tell me in plain English:
-- What is the object?
-- Where is it?
+For EACH object, describe:
+1. What the object is (be specific)
+2. Where it is located (use the position info)
+3. Any safety concerns
 
-Do NOT use numbers or technical terms. Speak naturally.
-Start: "There is a..." or "I see a..."
-Describe the {num_objects} objects now:"""
+Use natural language.
+
+Describe all {num_objects} objects clearly and completely:"""
         
     return prompt
 
@@ -102,6 +103,10 @@ def clean_output_for_tts(answer: str) -> str:
     import re
     txt = re.sub(r'^Object\s+\d+:\s*', '', txt, flags=re.IGNORECASE)
     txt = re.sub(r'\.\s+Object\s+\d+:\s*', '. ', txt, flags=re.IGNORECASE)
+    
+    # === HAPUS numbering "1.", "2.", "3." di awal ===
+    txt = re.sub(r'^\d+\.\s*', '', txt)
+    txt = re.sub(r'\.\s+\d+\.\s*', '. ', txt)
     
     # Fix huruf terpotong di awal
     if txt.startswith("xtremely"):
