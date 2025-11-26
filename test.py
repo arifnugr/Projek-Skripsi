@@ -46,14 +46,7 @@ def build_segments_info(objects: list) -> str:
 
 
 def build_prompt(segments_info: str = "") -> str:
-    """Prompt yang lebih detail dan mengarahkan output."""
-    if not segments_info:
-        return "Describe what you see in this image in detail, including objects and their locations."
-    
-    num_objects = segments_info.count("Object")
-    
     prompt = f"""You are assisting a blind person. Describe this image carefully.
-
 Detected objects at these positions:
 {segments_info}
 
@@ -62,9 +55,7 @@ For EACH object, describe:
 2. Where it is located (use the position info)
 3. Any safety concerns
 
-Use natural language.
-
-Describe all {num_objects} objects clearly and completely:"""
+Use natural language."""
         
     return prompt
 
@@ -75,7 +66,7 @@ def query_ollama_vision(model_name: str, prompt_text: str, image_b64: str) -> st
         "images": [image_b64],
         "stream": False,
         "options": {
-            "temperature": 0.5,  # Sedikit lebih tinggi untuk variasi
+            "temperature": 0.4,  # Sedikit lebih tinggi untuk variasi
             "num_predict": 150,  # NAIKKAN ke 150 tokens
             "top_k": 20,
             "top_p": 0.92,
