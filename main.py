@@ -2,30 +2,37 @@ import os
 import cv2
 import time
 from datetime import datetime
+import Jetson.GPIO as GPIO
 
-# === Import ONLY the functions from your existing modules ===
-from segmentation import segment_objects  # returns dict with 'segmented_image_path', 'objects', etc.
+from segmentation import segment_objects
 from test import (
     encode_image_base64, 
     build_prompt, 
-    build_segments_info,  # TAMBAHKAN ini untuk format objects info
+    build_segments_info,
     query_ollama_vision, 
     clean_output_for_tts, 
     MODEL_NAME
 )
-from translator_argos import translate_id  # EN -> ID (polished for TTS)
-from tts_piper import speak_id  # ID text -> WAV
+from translator_argos import translate_id
+from tts_piper import speak_id
 
+# === KONFIGURASI ===
 OUTPUT_DIR = "Output"
 FRAMES_DIR = os.path.join(OUTPUT_DIR, "frames")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(FRAMES_DIR, exist_ok=True)
 
-# Camera settings (USB default index 0). If you use CSI, switch to GStreamer pipeline.
 CAMERA_INDEX = 0
-FRAME_WIDTH  = 1280
-FRAME_HEIGHT = 720
-FPS          = 30
+FRAME_WIDTH, FRAME_HEIGHT, FPS = 1280, 720, 30
+
+BUTTON_PIN = 37
+DEBOUNCE_SEC = 0.15
+
+# === STATE GLOBAL ===
+last_press_time = 0.0
+trigger_requested = False
+is_processing = False
+cap = None
 
 
 def open_camera():
@@ -45,71 +52,14 @@ def save_frame(frame):
     return path
 
 
-def process_image(image_path: str):
-    """Run the full pipeline USING YOUR EXISTING MODULES ONLY.
-    Steps: Segment -> pick segmented image -> Moondream -> clean EN -> Translate ID -> TTS.
-    Returns a dict of outputs with latency measurements.
-    """
-    latency = {}
+def save_outputs(base_name, en_text, id_text, latency):
+    """Simpan file output teks dan latency"""
+    with open(os.path.join(OUTPUT_DIR, f"{base_name}_en.txt"), "w", encoding="utf-8") as f:
+        f.write(en_text)
+    with open(os.path.join(OUTPUT_DIR, f"{base_name}_id.txt"), "w", encoding="utf-8") as f:
+        f.write(id_text)
     
-    # 1) Segmentasi (pakai modul kamu)
-    t0 = time.time()
-    seg = segment_objects(image_path)
-    latency["segmentation"] = time.time() - t0
-    
-    seg_img = seg.get("segmented_image_path") or image_path  # fallback ke gambar asli kalau tidak ada segmented
-    objects = seg.get("objects", [])  # Ambil objects dari segmentasi
-
-    # 2) Build segments info untuk prompt
-    t0 = time.time()
-    segments_info = ""
-    if objects:
-        segments_info = build_segments_info(objects)  # Format objects untuk prompt
-        print(f"[INFO] {len(objects)} objects detected from segmentation")
-    latency["build_segments"] = time.time() - t0
-
-    # 3) Encode image
-    t0 = time.time()
-    img_b64 = encode_image_base64(seg_img)
-    latency["encode_image"] = time.time() - t0
-    
-    # 4) Build prompt
-    t0 = time.time()
-    prompt = build_prompt(segments_info)  # PASS segments_info ke build_prompt
-    latency["build_prompt"] = time.time() - t0
-    
-    # 5) Moondream inference
-    t0 = time.time()
-    en_raw = query_ollama_vision(MODEL_NAME, prompt, img_b64)
-    latency["moondream_inference"] = time.time() - t0
-
-    # 6) Clean EN output
-    t0 = time.time()
-    en_tts = clean_output_for_tts(en_raw)
-    latency["clean_output"] = time.time() - t0
-
-    # 7) Translate ke Indonesia
-    t0 = time.time()
-    id_tts = translate_id(en_tts)
-    latency["translation"] = time.time() - t0
-
-    # 8) Text-to-Speech
-    t0 = time.time()
-    wav_path = speak_id(id_tts)
-    latency["tts"] = time.time() - t0
-
-    # Calculate total pipeline latency
-    latency["total_pipeline"] = sum(latency.values())
-
-    # 9) Simpan teks
-    base = os.path.splitext(os.path.basename(image_path))[0]
-    with open(os.path.join(OUTPUT_DIR, f"{base}_en.txt"), "w", encoding="utf-8") as f:
-        f.write(en_tts)
-    with open(os.path.join(OUTPUT_DIR, f"{base}_id.txt"), "w", encoding="utf-8") as f:
-        f.write(id_tts)
-    
-    # Simpan laporan latency
-    with open(os.path.join(OUTPUT_DIR, f"{base}_latency.txt"), "w", encoding="utf-8") as f:
+    with open(os.path.join(OUTPUT_DIR, f"{base_name}_latency.txt"), "w", encoding="utf-8") as f:
         f.write("=== LATENCY REPORT ===\n\n")
         for step, duration in latency.items():
             if step != "total_pipeline":
@@ -117,106 +67,137 @@ def process_image(image_path: str):
                 f.write(f"{step:25s}: {duration:6.3f}s ({percentage:5.1f}%)\n")
         f.write(f"\n{'TOTAL PIPELINE':25s}: {latency['total_pipeline']:6.3f}s (100.0%)\n")
 
-    return {
-        "input_image": image_path,
-        "segmented_image": seg_img,
-        "objects": objects,
-        "segments_info": segments_info,  # Tambahkan untuk debugging
-        "raw_en": en_raw,
-        "clean_en": en_tts,
-        "final_id": id_tts,
-        "audio_wav": wav_path,
-        "latency": latency,  # TAMBAHAN: latency measurements
-    }
+
+def run_pipeline():
+    """Pipeline lengkap: capture -> segment -> VLM -> translate -> TTS"""
+    global cap
+    
+    print("\n================= PIPELINE DIMULAI =================")
+    wall_start = time.time()
+    latency = {}
+    
+    # Capture frame
+    ok, frame = cap.read()
+    if not ok:
+        print("[ERR] Gagal membaca frame kamera.")
+        return
+    
+    img_path = save_frame(frame)
+    print(f"[1/7] Frame disimpan: {img_path}")
+    
+    # Segmentasi
+    t0 = time.time()
+    seg = segment_objects(img_path)
+    latency["segmentation"] = time.time() - t0
+    
+    seg_img = seg.get("segmented_image_path") or img_path
+    objects = seg.get("objects", [])
+    print(f"[2/7] Segmentasi selesai: {len(objects)} objek ({latency['segmentation']:.3f}s)")
+    
+    # Build segments info
+    t0 = time.time()
+    segments_info = build_segments_info(objects) if objects else ""
+    latency["build_segments"] = time.time() - t0
+    
+    # Encode & build prompt
+    t0 = time.time()
+    img_b64 = encode_image_base64(seg_img)
+    latency["encode_image"] = time.time() - t0
+    
+    t0 = time.time()
+    prompt = build_prompt(segments_info)
+    latency["build_prompt"] = time.time() - t0
+    print(f"[3/7] Encoding & prompt selesai ({latency['encode_image']:.3f}s)")
+    
+    # Moondream inference
+    t0 = time.time()
+    en_raw = query_ollama_vision(MODEL_NAME, prompt, img_b64)
+    latency["moondream_inference"] = time.time() - t0
+    print(f"[4/7] Moondream: {en_raw[:50]}... ({latency['moondream_inference']:.3f}s)")
+    
+    # Clean output
+    t0 = time.time()
+    en_tts = clean_output_for_tts(en_raw)
+    latency["clean_output"] = time.time() - t0
+    
+    # Translate
+    t0 = time.time()
+    id_tts = translate_id(en_tts)
+    latency["translation"] = time.time() - t0
+    print(f"[5/7] Terjemahan: {id_tts[:50]}... ({latency['translation']:.3f}s)")
+    
+    # TTS
+    t0 = time.time()
+    wav_path = speak_id(id_tts)
+    latency["tts"] = time.time() - t0
+    print(f"[6/7] TTS selesai: {wav_path} ({latency['tts']:.3f}s)")
+    
+    # Total & save
+    latency["total_pipeline"] = sum(latency.values())
+    wall_time = time.time() - wall_start
+    
+    base = os.path.splitext(os.path.basename(img_path))[0]
+    save_outputs(base, en_tts, id_tts, latency)
+    
+    print(f"[7/7] Pipeline selesai: {latency['total_pipeline']:.3f}s (wall: {wall_time:.3f}s)")
+    print("================= PIPELINE SELESAI =================\n")
 
 
-def print_latency_report(latency: dict):
-    """Print formatted latency report to console"""
-    print("\n" + "="*60)
-    print("LATENCY REPORT".center(60))
-    print("="*60)
-    
-    steps = [
-        ("Segmentation (FastSAM)", "segmentation"),
-        ("Build Segments Info", "build_segments"),
-        ("Encode Image (Base64)", "encode_image"),
-        ("Build Prompt", "build_prompt"),
-        ("Moondream Inference", "moondream_inference"),
-        ("Clean Output", "clean_output"),
-        ("Translation (EN->ID)", "translation"),
-        ("Text-to-Speech (Piper)", "tts"),
-    ]
-    
-    total = latency["total_pipeline"]
-    
-    for label, key in steps:
-        duration = latency.get(key, 0)
-        percentage = (duration / total) * 100 if total > 0 else 0
-        print(f"{label:30s}: {duration:6.3f}s ({percentage:5.1f}%)")
-    
-    print("-" * 60)
-    print(f"{'TOTAL PIPELINE':30s}: {total:6.3f}s (100.0%)")
-    print("="*60 + "\n")
+def on_button_pressed():
+    global trigger_requested, is_processing
+    if is_processing:
+        print("[INFO] Pipeline masih berjalan. Abaikan.")
+        return
+    if not trigger_requested:
+        trigger_requested = True
+        print("[EVENT] Tombol ditekan! Pipeline akan dijalankan...")
+
+
+def button_callback(channel):
+    global last_press_time
+    now = time.time()
+    if now - last_press_time < DEBOUNCE_SEC:
+        return
+    last_press_time = now
+    on_button_pressed()
 
 
 def main():
-    print("=== Vision Assist — Manual Trigger Mode ===")
-    print("Preview window: press SPACE to process current frame, Q to quit.")
+    global trigger_requested, is_processing, cap
+    
+    # Setup GPIO
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, callback=button_callback, bouncetime=1)
+    
+    # Buka kamera
     cap = open_camera()
-
+    print("=== Vision Assist — Button Trigger Mode ===")
+    print(f"Tombol pada pin fisik {BUTTON_PIN}. Tekan untuk proses.")
+    print("Tekan Ctrl+C untuk keluar.\n")
+    
     try:
         while True:
-            ok, frame = cap.read()
-            if not ok:
-                print("[ERR] Gagal membaca frame kamera.")
-                time.sleep(0.1)
-                continue
-
-            # show preview
-            preview = cv2.resize(frame, (960, 540))
-            cv2.imshow("Preview — SPACE: process, Q: quit", preview)
-            key = cv2.waitKey(1) & 0xFF
-
-            if key == ord('q'):
-                print("[INFO] Keluar.")
-                break
-
-            if key == ord(' '):  # SPACE triggers one full pipeline run
-                img_path = save_frame(frame)
-                print(f"[RUN] Proses frame: {img_path}")
-                
-                # Measure total wall-clock time
-                wall_start = time.time()
-                
+            if trigger_requested and not is_processing:
+                trigger_requested = False
+                is_processing = True
                 try:
-                    res = process_image(img_path)
-                    
-                    wall_end = time.time()
-                    wall_time = wall_end - wall_start
-                    
-                    print("\n=== HASIL ===")
-                    if res["objects"]:
-                        print(f"[Objects]: {len(res['objects'])} detected")
-                        print("[Segments]:", res["segments_info"][:100] + "...")  # Show first 100 chars
-                    print("[EN RAW ]:", res["raw_en"]) 
-                    print("[EN TTS ]:", res["clean_en"]) 
-                    print("[ID TTS ]:", res["final_id"]) 
-                    print("[Audio ]:", res["audio_wav"]) 
-                    print("[SegImg]:", res["segmented_image"])
-                    print(f"[WallTime]: {wall_time:.3f}s (total execution)")
-                    print("============\n")
-                    
-                    # Print detailed latency report
-                    print_latency_report(res["latency"])
-                    
+                    run_pipeline()
                 except Exception as e:
-                    print("[ERR] Pipeline gagal:", e)
+                    print(f"[ERR] Pipeline gagal: {e}")
                     import traceback
                     traceback.print_exc()
-
+                finally:
+                    is_processing = False
+            
+            time.sleep(0.1)
+    
+    except KeyboardInterrupt:
+        print("\n[MAIN] Dihentikan. Keluar...")
     finally:
-        cap.release()
-        cv2.destroyAllWindows()
+        if cap:
+            cap.release()
+        GPIO.cleanup()
 
 
 if __name__ == "__main__":
